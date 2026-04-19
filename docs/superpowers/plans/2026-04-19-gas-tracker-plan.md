@@ -312,6 +312,8 @@ git commit -m "configure tailwind css with dark theme"
 
 ## Task 3: Database schema + RLS policies
 
+**Context:** We're reusing the existing `Grid` Supabase project (to stay on the free tier — 2-project limit). Tables are prefixed `gas_` so they don't collide with Grid's tables. RLS isolates rows per `auth.uid()`, so Grid and Gas data are mutually invisible even though they share the same DB.
+
 **Files:**
 - Create: `supabase/migrations/0001_initial_schema.sql`, `supabase/migrations/0002_rls_policies.sql`, `.env.local.example`, `.env.local` (not committed)
 
@@ -322,7 +324,7 @@ Create `supabase/migrations/0001_initial_schema.sql`:
 ```sql
 create extension if not exists "pgcrypto";
 
-create table public.vehicles (
+create table public.gas_vehicles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
@@ -330,12 +332,12 @@ create table public.vehicles (
   created_at timestamptz not null default now()
 );
 
-create index vehicles_user_id_idx on public.vehicles(user_id);
+create index gas_vehicles_user_id_idx on public.gas_vehicles(user_id);
 
-create table public.fill_ups (
+create table public.gas_fill_ups (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  vehicle_id uuid not null references public.vehicles(id) on delete cascade,
+  vehicle_id uuid not null references public.gas_vehicles(id) on delete cascade,
   date date not null,
   mileage integer not null,
   gallons numeric(8,3) not null check (gallons > 0),
@@ -344,22 +346,22 @@ create table public.fill_ups (
   created_at timestamptz not null default now()
 );
 
-create index fill_ups_user_id_idx on public.fill_ups(user_id);
-create index fill_ups_vehicle_mileage_idx on public.fill_ups(vehicle_id, mileage);
-create index fill_ups_vehicle_date_idx on public.fill_ups(vehicle_id, date);
+create index gas_fill_ups_user_id_idx on public.gas_fill_ups(user_id);
+create index gas_fill_ups_vehicle_mileage_idx on public.gas_fill_ups(vehicle_id, mileage);
+create index gas_fill_ups_vehicle_date_idx on public.gas_fill_ups(vehicle_id, date);
 
-create table public.oil_changes (
+create table public.gas_oil_changes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  vehicle_id uuid not null references public.vehicles(id) on delete cascade,
+  vehicle_id uuid not null references public.gas_vehicles(id) on delete cascade,
   date date not null,
   mileage integer,
   notes text,
   created_at timestamptz not null default now()
 );
 
-create index oil_changes_user_id_idx on public.oil_changes(user_id);
-create index oil_changes_vehicle_date_idx on public.oil_changes(vehicle_id, date);
+create index gas_oil_changes_user_id_idx on public.gas_oil_changes(user_id);
+create index gas_oil_changes_vehicle_date_idx on public.gas_oil_changes(vehicle_id, date);
 ```
 
 - [ ] **Step 2: Write RLS migration**
@@ -367,35 +369,35 @@ create index oil_changes_vehicle_date_idx on public.oil_changes(vehicle_id, date
 Create `supabase/migrations/0002_rls_policies.sql`:
 
 ```sql
-alter table public.vehicles enable row level security;
-alter table public.fill_ups enable row level security;
-alter table public.oil_changes enable row level security;
+alter table public.gas_vehicles enable row level security;
+alter table public.gas_fill_ups enable row level security;
+alter table public.gas_oil_changes enable row level security;
 
-create policy "vehicles_owner_select" on public.vehicles
+create policy "gas_vehicles_owner_select" on public.gas_vehicles
   for select using (auth.uid() = user_id);
-create policy "vehicles_owner_insert" on public.vehicles
+create policy "gas_vehicles_owner_insert" on public.gas_vehicles
   for insert with check (auth.uid() = user_id);
-create policy "vehicles_owner_update" on public.vehicles
+create policy "gas_vehicles_owner_update" on public.gas_vehicles
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "vehicles_owner_delete" on public.vehicles
+create policy "gas_vehicles_owner_delete" on public.gas_vehicles
   for delete using (auth.uid() = user_id);
 
-create policy "fill_ups_owner_select" on public.fill_ups
+create policy "gas_fill_ups_owner_select" on public.gas_fill_ups
   for select using (auth.uid() = user_id);
-create policy "fill_ups_owner_insert" on public.fill_ups
+create policy "gas_fill_ups_owner_insert" on public.gas_fill_ups
   for insert with check (auth.uid() = user_id);
-create policy "fill_ups_owner_update" on public.fill_ups
+create policy "gas_fill_ups_owner_update" on public.gas_fill_ups
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "fill_ups_owner_delete" on public.fill_ups
+create policy "gas_fill_ups_owner_delete" on public.gas_fill_ups
   for delete using (auth.uid() = user_id);
 
-create policy "oil_changes_owner_select" on public.oil_changes
+create policy "gas_oil_changes_owner_select" on public.gas_oil_changes
   for select using (auth.uid() = user_id);
-create policy "oil_changes_owner_insert" on public.oil_changes
+create policy "gas_oil_changes_owner_insert" on public.gas_oil_changes
   for insert with check (auth.uid() = user_id);
-create policy "oil_changes_owner_update" on public.oil_changes
+create policy "gas_oil_changes_owner_update" on public.gas_oil_changes
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "oil_changes_owner_delete" on public.oil_changes
+create policy "gas_oil_changes_owner_delete" on public.gas_oil_changes
   for delete using (auth.uid() = user_id);
 ```
 
@@ -1080,7 +1082,7 @@ async function requireUserId(): Promise<string> {
 // Vehicles
 export async function listVehicles(): Promise<Vehicle[]> {
   const { data, error } = await supabase
-    .from('vehicles').select('*').order('created_at', { ascending: true });
+    .from('gas_vehicles').select('*').order('created_at', { ascending: true });
   if (error) throw error;
   return data as Vehicle[];
 }
@@ -1088,10 +1090,10 @@ export async function listVehicles(): Promise<Vehicle[]> {
 export async function createVehicle(input: NewVehicle): Promise<Vehicle> {
   const user_id = await requireUserId();
   if (input.is_default) {
-    await supabase.from('vehicles').update({ is_default: false }).eq('user_id', user_id);
+    await supabase.from('gas_vehicles').update({ is_default: false }).eq('user_id', user_id);
   }
   const { data, error } = await supabase
-    .from('vehicles').insert({ ...input, user_id }).select().single();
+    .from('gas_vehicles').insert({ ...input, user_id }).select().single();
   if (error) throw error;
   return data as Vehicle;
 }
@@ -1099,22 +1101,22 @@ export async function createVehicle(input: NewVehicle): Promise<Vehicle> {
 export async function updateVehicle(id: string, patch: Partial<NewVehicle>): Promise<Vehicle> {
   const user_id = await requireUserId();
   if (patch.is_default) {
-    await supabase.from('vehicles').update({ is_default: false }).eq('user_id', user_id).neq('id', id);
+    await supabase.from('gas_vehicles').update({ is_default: false }).eq('user_id', user_id).neq('id', id);
   }
   const { data, error } = await supabase
-    .from('vehicles').update(patch).eq('id', id).select().single();
+    .from('gas_vehicles').update(patch).eq('id', id).select().single();
   if (error) throw error;
   return data as Vehicle;
 }
 
 export async function deleteVehicle(id: string): Promise<void> {
-  const { error } = await supabase.from('vehicles').delete().eq('id', id);
+  const { error } = await supabase.from('gas_vehicles').delete().eq('id', id);
   if (error) throw error;
 }
 
 // Fill-ups
 export async function listFillUps(vehicleId?: string): Promise<FillUp[]> {
-  let q = supabase.from('fill_ups').select('*').order('date', { ascending: false });
+  let q = supabase.from('gas_fill_ups').select('*').order('date', { ascending: false });
   if (vehicleId) q = q.eq('vehicle_id', vehicleId);
   const { data, error } = await q;
   if (error) throw error;
@@ -1124,26 +1126,26 @@ export async function listFillUps(vehicleId?: string): Promise<FillUp[]> {
 export async function createFillUp(input: NewFillUp): Promise<FillUp> {
   const user_id = await requireUserId();
   const { data, error } = await supabase
-    .from('fill_ups').insert({ ...input, user_id }).select().single();
+    .from('gas_fill_ups').insert({ ...input, user_id }).select().single();
   if (error) throw error;
   return data as FillUp;
 }
 
 export async function updateFillUp(id: string, patch: Partial<NewFillUp>): Promise<FillUp> {
   const { data, error } = await supabase
-    .from('fill_ups').update(patch).eq('id', id).select().single();
+    .from('gas_fill_ups').update(patch).eq('id', id).select().single();
   if (error) throw error;
   return data as FillUp;
 }
 
 export async function deleteFillUp(id: string): Promise<void> {
-  const { error } = await supabase.from('fill_ups').delete().eq('id', id);
+  const { error } = await supabase.from('gas_fill_ups').delete().eq('id', id);
   if (error) throw error;
 }
 
 // Oil changes
 export async function listOilChanges(vehicleId?: string): Promise<OilChange[]> {
-  let q = supabase.from('oil_changes').select('*').order('date', { ascending: false });
+  let q = supabase.from('gas_oil_changes').select('*').order('date', { ascending: false });
   if (vehicleId) q = q.eq('vehicle_id', vehicleId);
   const { data, error } = await q;
   if (error) throw error;
@@ -1153,20 +1155,20 @@ export async function listOilChanges(vehicleId?: string): Promise<OilChange[]> {
 export async function createOilChange(input: NewOilChange): Promise<OilChange> {
   const user_id = await requireUserId();
   const { data, error } = await supabase
-    .from('oil_changes').insert({ ...input, user_id }).select().single();
+    .from('gas_oil_changes').insert({ ...input, user_id }).select().single();
   if (error) throw error;
   return data as OilChange;
 }
 
 export async function updateOilChange(id: string, patch: Partial<NewOilChange>): Promise<OilChange> {
   const { data, error } = await supabase
-    .from('oil_changes').update(patch).eq('id', id).select().single();
+    .from('gas_oil_changes').update(patch).eq('id', id).select().single();
   if (error) throw error;
   return data as OilChange;
 }
 
 export async function deleteOilChange(id: string): Promise<void> {
-  const { error } = await supabase.from('oil_changes').delete().eq('id', id);
+  const { error } = await supabase.from('gas_oil_changes').delete().eq('id', id);
   if (error) throw error;
 }
 ```
@@ -2339,7 +2341,7 @@ async function main() {
   const userId = user.id;
 
   // Create Car 1 if no vehicle exists for the user yet.
-  const { data: existing } = await supabase.from('vehicles').select('*').eq('user_id', userId);
+  const { data: existing } = await supabase.from('gas_vehicles').select('*').eq('user_id', userId);
   let vehicleId: string;
   if (existing && existing.length > 0) {
     vehicleId = existing[0].id;
@@ -2349,7 +2351,7 @@ async function main() {
       vehicleId = 'dry-run-vehicle';
       console.log('Would create vehicle: Car 1 (default)');
     } else {
-      const { data, error } = await supabase.from('vehicles').insert({ user_id: userId, name: 'Car 1', is_default: true }).select().single();
+      const { data, error } = await supabase.from('gas_vehicles').insert({ user_id: userId, name: 'Car 1', is_default: true }).select().single();
       if (error) throw error;
       vehicleId = data.id;
       console.log(`Created vehicle: Car 1 (${vehicleId})`);
@@ -2410,12 +2412,12 @@ async function main() {
   if (dryRun) { console.log('Dry run — no writes.'); return; }
 
   if (fillUps.length > 0) {
-    const { error } = await supabase.from('fill_ups').insert(fillUps);
+    const { error } = await supabase.from('gas_fill_ups').insert(fillUps);
     if (error) throw error;
     console.log(`Inserted ${fillUps.length} fill-ups.`);
   }
   if (oilChanges.length > 0) {
-    const { error } = await supabase.from('oil_changes').insert(oilChanges);
+    const { error } = await supabase.from('gas_oil_changes').insert(oilChanges);
     if (error) throw error;
     console.log(`Inserted ${oilChanges.length} oil changes.`);
   }
