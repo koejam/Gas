@@ -4,7 +4,7 @@ Single-user PWA for tracking gas fill-ups and oil changes across multiple vehicl
 
 ## Stack
 
-- React 18 + TypeScript + Vite
+- React 19 + TypeScript + Vite
 - Tailwind CSS
 - Supabase (Postgres + Auth + RLS); magic-link auth
 - Recharts for charts
