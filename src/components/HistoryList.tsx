@@ -122,6 +122,9 @@ export function HistoryList() {
                   <span>{(item as FillUp).gallons.toFixed(3)} gal</span>
                   <span>${(item as FillUp).total_price.toFixed(2)}</span>
                   <span className="text-slate-400">
+                    ${((item as FillUp).total_price / (item as FillUp).gallons).toFixed(3)}/gal
+                  </span>
+                  <span className="text-slate-400">
                     {mpgById[item.id] == null ? '—' : `${mpgById[item.id]!.toFixed(1)} mpg`}
                   </span>
                 </div>
